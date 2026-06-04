@@ -1,0 +1,120 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // 1. Global Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- REUSABLE SECURITY PRIMITIVES ---
+    
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // --- SCHEMA VALIDATION HELPERS ---
+
+    function isValidUser(data) {
+      return data.keys().hasAll(['userId', 'email', 'createdAt', 'updatedAt', 'encryptionSalt'])
+        && data.keys().size() <= 10
+        && data.userId is string && data.userId.size() <= 128
+        && data.email is string && data.email.size() <= 256
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp
+        && data.encryptionSalt is string && data.encryptionSalt.size() <= 256
+        // Optional passcode validation fields:
+        && (!data.keys().hasAll(['passcodeSalt']) || (data.passcodeSalt is string && data.passcodeSalt.size() <= 256))
+        && (!data.keys().hasAll(['passcodeHash']) || (data.passcodeHash is string && data.passcodeHash.size() <= 256))
+        && (!data.keys().hasAll(['decoyPasscodeHash']) || (data.decoyPasscodeHash is string && data.decoyPasscodeHash.size() <= 256))
+        && (!data.keys().hasAll(['disguiseType']) || (data.disguiseType is string && data.disguiseType.size() <= 64));
+    }
+
+    function isValidVaultRecord(data) {
+      return data.keys().hasAll(['id', 'userId', 'createdAt', 'updatedAt', 'encryptedPayload', 'encryptionIv'])
+        && data.keys().size() == 6
+        && data.id is string && data.id.size() <= 128
+        && data.userId is string && data.userId.size() <= 128
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp
+        && data.encryptedPayload is string && data.encryptedPayload.size() <= 1048576 // 1MB limit max
+        && data.encryptionIv is string && data.encryptionIv.size() <= 128;
+    }
+
+    // --- CORES MATCH RULES ---
+
+    // Users collection
+    match /users/{userId} {
+      allow get: if isOwner(userId);
+      
+      allow create: if isOwner(userId) 
+        && isValidUser(incoming())
+        && incoming().userId == request.auth.uid
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+        
+      allow update: if isOwner(userId)
+        && isValidUser(incoming())
+        && incoming().userId == existing().userId
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          incoming().diff(existing()).affectedKeys().hasOnly([
+            'email', 'encryptionSalt', 'passcodeSalt', 'passcodeHash', 
+            'decoyPasscodeHash', 'disguiseType', 'updatedAt'
+          ])
+        );
+        
+      allow delete: if isOwner(userId);
+    }
+
+    // Vault records collection
+    match /vault_records/{recordId} {
+      // Direct access (get) matches the record owner
+      allow get: if isSignedIn() && existing().userId == request.auth.uid;
+      
+      // Collection query (list) strictly forces filtering by userId to prevent leaks
+      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
+      
+      allow create: if isSignedIn()
+        && isValidId(recordId)
+        && isValidVaultRecord(incoming())
+        && incoming().userId == request.auth.uid
+        && incoming().id == recordId
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+        
+      allow update: if isSignedIn()
+        && isValidId(recordId)
+        && existing().userId == request.auth.uid
+        && incoming().userId == request.auth.uid
+        && isValidVaultRecord(incoming())
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          incoming().diff(existing()).affectedKeys().hasOnly([
+            'encryptedPayload', 'encryptionIv', 'updatedAt'
+          ])
+        );
+        
+      allow delete: if isSignedIn() 
+        && existing().userId == request.auth.uid;
+    }
+  }
+}

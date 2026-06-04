@@ -1,0 +1,94 @@
+{
+  "entities": {
+    "users": {
+      "title": "User Profile",
+      "description": "User profile with configuration and encryption parameters",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "The unique user ID"
+        },
+        "email": {
+          "type": "string",
+          "description": "User email address"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp when the profile was created"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp when the profile was updated"
+        },
+        "encryptionSalt": {
+          "type": "string",
+          "description": "User-specific salt used for key derivation"
+        },
+        "passcodeSalt": {
+          "type": "string",
+          "description": "Salt used for passcode hashing"
+        },
+        "passcodeHash": {
+          "type": "string",
+          "description": "Scrypted/PBKDF2 Hashed real passcode for validation"
+        },
+        "decoyPasscodeHash": {
+          "type": "string",
+          "description": "Scrypted/PBKDF2 Hashed decoy passcode for validation"
+        },
+        "disguiseType": {
+          "type": "string",
+          "description": "Active disguise layout (e.g. calculator, system-audit)"
+        }
+      },
+      "required": ["userId", "email", "createdAt", "updatedAt", "encryptionSalt"]
+    },
+    "vault_records": {
+      "title": "Vault Record",
+      "description": "Client-side encrypted vault item containing notes, credentials, or files",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique record ID"
+        },
+        "userId": {
+          "type": "string",
+          "description": "Owner of this vault record"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp when the record was created"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp when the record was last modified"
+        },
+        "encryptedPayload": {
+          "type": "string",
+          "description": "Base64 encoded AES-GCM encrypted payload containing secure JSON string (with name, description, content, etc.)"
+        },
+        "encryptionIv": {
+          "type": "string",
+          "description": "Initialization vector used for encryption"
+        }
+      },
+      "required": ["id", "userId", "createdAt", "updatedAt", "encryptedPayload", "encryptionIv"]
+    }
+  },
+  "firestore": {
+    "users/{userId}": {
+      "schema": "users",
+      "description": "Store individual user settings"
+    },
+    "vault_records/{recordId}": {
+      "schema": "vault_records",
+      "description": "Encrypted notes, credentials, or files stored securely"
+    }
+  }
+}
